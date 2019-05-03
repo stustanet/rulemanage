@@ -1,0 +1,15 @@
+
+
+[database]
+dsn = "postgres://user:pass@localhost/dbname?sslmode=verify-full"
+
+[rules]
+
+[rules.et]
+source = "https://rules.emergingthreats.net/open/suricata-4.0/emerging.rules.tar.gz"
+files = [
+  "rules/emerging-attack_response.rules",
+  "rules/emerging-dos.rules",
+  "rules/emerging-trojan.rules",
+  "rules/emerging-worm.rules",
+]
