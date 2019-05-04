@@ -23,6 +23,7 @@ type ruleMeta struct {
 	active bool
 }
 
+// insert inserts a rule's sid and meta data into the index.
 func (ri *ruleIndex) insert(sid int, rev int16, active bool) {
 	//fmt.Println(sid, rev, active)
 
@@ -36,6 +37,8 @@ func (ri *ruleIndex) insert(sid int, rev int16, active bool) {
 	panic("TBD")
 }
 
+// find attempts to find a given sid in the index.
+// If it could be found, it is marked as seen and its meta data returned.
 func (ri *ruleIndex) find(sid int) (found bool, rev int16, active bool) {
 	n := len(ri.sids) - 1
 	if n < 0 {
@@ -45,11 +48,15 @@ func (ri *ruleIndex) find(sid int) (found bool, rev int16, active bool) {
 	pos := ri.pos
 
 	// binary search if the gap is too big
-	for diff, min, max := sid-ri.sids[pos], 0, n; (diff > 10 || diff < -10) && max-min > 10; diff = sid - ri.sids[pos] {
-		if diff > 0 {
+	for min, max := 0, n; max-min > 10; {
+		// figure out in which direction we need to search
+		if diff := sid - ri.sids[pos]; diff > 10 {
 			min = pos
-		} else {
+		} else if diff < -10 {
 			max = pos
+		} else {
+			// stop binary search early if the difference is small
+			break
 		}
 		pos = (min + max) / 2
 	}
@@ -66,8 +73,8 @@ func (ri *ruleIndex) find(sid int) (found bool, rev int16, active bool) {
 
 	if ri.sids[pos] == sid {
 		ri.seen[pos] = true
-		meta := ri.meta[pos]
 		ri.pos = pos
+		meta := ri.meta[pos]
 		return true, meta.rev, meta.active
 	}
 
