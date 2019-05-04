@@ -8,7 +8,6 @@ import (
 	"archive/tar"
 	"bufio"
 	"compress/gzip"
-	"database/sql"
 	"flag"
 	"io"
 	"log"
@@ -23,7 +22,9 @@ import (
 
 type empty struct{}
 
-var db *sql.DB
+type saveRuleFunc func(sid int, newRev int16, line string, file string, update bool) error
+
+type handleRuleFunc func(sid int, newRev int16, active bool)
 
 var knownRules ruleIndex
 
@@ -34,59 +35,31 @@ func main() {
 	var cfg Config
 	cfg.loadFile(*cfgPath)
 
-	var err error
-	db, err = sql.Open("postgres", cfg.Database.DSN)
+	var db database
+	err := db.connect(cfg.Database.DSN)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if err = db.Ping(); err != nil {
-		log.Fatal(err)
-	}
-
-	getCurrentRules()
+	db.currentRules(knownRules.insert)
 
 	for name, src := range cfg.Rules {
-		handleSource(name, src)
+		handleSource(db.saveRule, name, src)
 	}
 
-	findDeletedRules()
-}
-
-func getCurrentRules() {
-	rows, err := db.Query("SELECT sid, rev, active FROM rule ORDER BY sid ASC")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for rows.Next() {
-		var (
-			sid    int
-			rev    int16
-			active bool
-		)
-		if err := rows.Scan(&sid, &rev, &active); err != nil {
-			log.Fatal(err)
-		}
-		knownRules.insert(sid, rev, active)
-	}
-}
-
-func findDeletedRules() {
 	for {
 		sid := knownRules.nextUnseen()
 		if sid < 0 {
 			return
 		}
 		log.Println("SID", sid, "was deleted")
-		_, err := db.Exec(`DELETE FROM rule WHERE sid = $1`, sid)
-		if err != nil {
+		if err := db.deleteRule(sid); err != nil {
 			log.Println("[ERROR]", err, "for SID", sid)
 		}
 	}
 }
 
-func handleSource(name string, src source) {
+func handleSource(save saveRuleFunc, name string, src source) {
 	log.Printf("fetching source '%s' from %s\n", name, src.Source)
 
 	wantedFiles := make(map[string]empty)
@@ -144,7 +117,20 @@ func handleSource(name string, src source) {
 			if rule == nil {
 				continue
 			}
-			saveRule(l, name+":"+hdr.Name, rule)
+
+			fileID := name + ":" + hdr.Name
+			sid := rule.SID
+			newRev := int16(rule.Revision)
+			found, rev, _ := knownRules.find(sid)
+			if !found {
+				log.Println("SID", sid, "is new")
+			} else if newRev > rev {
+				log.Println("SID", sid, "was updated")
+			}
+			if err := save(sid, newRev, l, fileID, found); err != nil {
+				log.Println("[ERROR]", err, "for SID", sid)
+			}
+
 		}
 		if err := scanner.Err(); err != nil {
 			log.Fatal(err)
@@ -175,23 +161,4 @@ func parseRule(line string) *gonids.Rule {
 	}
 
 	return r
-}
-
-func saveRule(line string, file string, r *gonids.Rule) bool {
-	found, rev, _ := knownRules.find(r.SID)
-	if !found {
-		log.Println("SID", r.SID, "is new")
-		_, err := db.Exec(`INSERT INTO rule(sid, rev, file, pattern, active) VALUES ($1, $2, $3, $4, TRUE)`, r.SID, r.Revision, file, line)
-		if err != nil {
-			log.Println("[ERROR]", err, "for SID", r.SID)
-		}
-	} else if r.Revision > int(rev) {
-		log.Println("SID", r.SID, "was updated")
-		_, err := db.Exec(`UPDATE rule SET rev = $1, file = $2, pattern = $3, updated_at = NOW() WHERE sid = $4`, r.Revision, file, line, r.SID)
-		if err != nil {
-			log.Println("[ERROR]", err, "for SID", r.SID)
-		}
-	}
-
-	return false
 }
