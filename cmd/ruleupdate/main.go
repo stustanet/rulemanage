@@ -17,14 +17,20 @@ import (
 
 	"github.com/google/gonids"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 )
 
-type empty struct{}
+type ruleMeta struct {
+	rev           int16
+	deactivatedAt pq.NullTime
+	deletedAt     pq.NullTime
+}
+
+type handleRuleFunc func(sid int, meta ruleMeta)
 
 type saveRuleFunc func(sid int, newRev int16, line string, file string, update bool) error
 
-type handleRuleFunc func(sid int, newRev int16, active bool)
+type empty struct{}
 
 var knownRules ruleIndex
 
@@ -41,7 +47,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	db.currentRules(knownRules.insert)
+	err = db.currentRules(knownRules.insert)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	for name, src := range cfg.Rules {
 		handleSource(db.saveRule, name, src)
@@ -120,14 +129,14 @@ func handleSource(save saveRuleFunc, name string, src source) {
 
 			fileID := name + ":" + hdr.Name
 			sid := rule.SID
-			newRev := int16(rule.Revision)
-			found, rev, _ := knownRules.find(sid)
+			rev := int16(rule.Revision)
+			found, meta := knownRules.find(sid)
 			if !found {
 				log.Println("SID", sid, "is new")
-			} else if newRev > rev {
+			} else if rev > meta.rev || meta.deletedAt.Valid {
 				log.Println("SID", sid, "was updated")
 			}
-			if err := save(sid, newRev, l, fileID, found); err != nil {
+			if err := save(sid, rev, l, fileID, found); err != nil {
 				log.Println("[ERROR]", err, "for SID", sid)
 			}
 

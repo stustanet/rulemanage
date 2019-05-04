@@ -24,36 +24,35 @@ func (db *database) connect(dsn string) (err error) {
 }
 
 func (db *database) currentRules(handle handleRuleFunc) error {
-	rows, err := db.db.Query("SELECT sid, rev, active FROM rule ORDER BY sid ASC")
+	rows, err := db.db.Query("SELECT sid, rev, deactivated_at, deleted_at FROM rule ORDER BY sid ASC")
 	if err != nil {
 		return err
 	}
 
 	for rows.Next() {
 		var (
-			sid    int
-			rev    int16
-			active bool
+			sid  int
+			meta ruleMeta
 		)
-		if err := rows.Scan(&sid, &rev, &active); err != nil {
+		if err := rows.Scan(&sid, &meta.rev, &meta.deactivatedAt, &meta.deletedAt); err != nil {
 			return err
 		}
-		handle(sid, rev, active)
+		handle(sid, meta)
 	}
 	return rows.Err()
 }
 
 func (db *database) deleteRule(sid int) (err error) {
-	_, err = db.db.Exec(`DELETE FROM rule WHERE sid = $1`, sid)
+	_, err = db.db.Exec(`UPDATE rule SET deleted_at = NOW() WHERE sid = $1 AND deleted_at IS NULL`, sid)
 	return
 }
 
 func (db *database) saveRule(sid int, newRev int16, line string, file string, update bool) (err error) {
 	if update {
-		_, err = db.db.Exec(`UPDATE rule SET rev = $1, file = $2, pattern = $3, updated_at = NOW() WHERE sid = $4`, newRev, file, line, sid)
+		_, err = db.db.Exec(`UPDATE rule SET rev = $1, file = $2, pattern = $3, updated_at = NOW(), deleted_at = NULL WHERE sid = $4`, newRev, file, line, sid)
 		return
 	} else {
-		_, err = db.db.Exec(`INSERT INTO rule(sid, rev, file, pattern, active) VALUES ($1, $2, $3, $4, TRUE)`, sid, newRev, file, line)
+		_, err = db.db.Exec(`INSERT INTO rule(sid, rev, file, pattern) VALUES ($1, $2, $3, $4)`, sid, newRev, file, line)
 		return
 	}
 }

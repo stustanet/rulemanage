@@ -18,20 +18,14 @@ type ruleIndex struct {
 	state byte
 }
 
-type ruleMeta struct {
-	rev    int16
-	active bool
-}
-
 // insert inserts a rule's sid and meta data into the index.
-func (ri *ruleIndex) insert(sid int, rev int16, active bool) {
-	//fmt.Println(sid, rev, active)
+func (ri *ruleIndex) insert(sid int, meta ruleMeta) {
 
 	// common case: rules are inserted in ascending order
 	if len(ri.sids) == 0 || ri.sids[len(ri.sids)-1] < sid {
 		ri.sids = append(ri.sids, sid)
-		ri.meta = append(ri.meta, ruleMeta{rev, active})
-		ri.seen = append(ri.seen, false)
+		ri.meta = append(ri.meta, meta)
+		ri.seen = append(ri.seen, meta.deletedAt.Valid)
 		return
 	}
 	panic("TBD")
@@ -39,7 +33,7 @@ func (ri *ruleIndex) insert(sid int, rev int16, active bool) {
 
 // find attempts to find a given sid in the index.
 // If it could be found, it is marked as seen and its meta data returned.
-func (ri *ruleIndex) find(sid int) (found bool, rev int16, active bool) {
+func (ri *ruleIndex) find(sid int) (found bool, meta ruleMeta) {
 	n := len(ri.sids) - 1
 	if n < 0 {
 		return
@@ -75,10 +69,10 @@ func (ri *ruleIndex) find(sid int) (found bool, rev int16, active bool) {
 		ri.seen[pos] = true
 		ri.pos = pos
 		meta := ri.meta[pos]
-		return true, meta.rev, meta.active
+		return true, meta
 	}
 
-	return false, 0, false
+	return
 }
 
 // nextUnseen returns the next SID that wasn't seen or -1 if there is none
