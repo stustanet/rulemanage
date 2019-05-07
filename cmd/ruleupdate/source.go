@@ -11,6 +11,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -25,11 +27,52 @@ func handleSource(saveRule saveRuleFunc, name string, src source) {
 
 	switch {
 	case strings.HasPrefix(src.Source, "/"):
-		log.Println("LOCAL SOURCE")
+		handleLocalSource(saveRule, name, src, wantedFiles)
 		return
 	case strings.HasPrefix(src.Source, "https://"),
 		strings.HasPrefix(src.Source, "http://"):
 		handleHTTPSource(saveRule, name, src, wantedFiles)
+	}
+}
+
+func handleLocalSource(saveRule saveRuleFunc, name string, src source, wantedFiles stringSet) {
+	if err := filepath.Walk(src.Source, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(src.Source, path)
+
+		if !wantedFiles.contains(relPath) {
+			log.Println("skipping", relPath)
+		}
+		if err != nil {
+			return err
+		}
+
+		log.Printf("parsing %s\n", relPath)
+		fileID := name + ":" + relPath
+
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			handleRule(saveRule, fileID, scanner.Text())
+		}
+		if err := scanner.Err(); err != nil {
+			log.Fatal(err)
+		}
+		return file.Close()
+	}); err != nil {
+		log.Fatalf("error walking the path %q: %v\n", src.Source, err)
+		return
 	}
 }
 
