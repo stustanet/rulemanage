@@ -23,7 +23,7 @@ func (db *database) connect(dsn string) (err error) {
 	return db.db.Ping()
 }
 
-func (db *database) currentRules(handle handleRuleFunc) error {
+func (db *database) currentRules(handleRule handleRuleFunc) error {
 	rows, err := db.db.Query("SELECT sid, rev, deactivated_at, deleted_at FROM rule ORDER BY sid ASC")
 	if err != nil {
 		return err
@@ -37,7 +37,7 @@ func (db *database) currentRules(handle handleRuleFunc) error {
 		if err := rows.Scan(&sid, &meta.rev, &meta.deactivatedAt, &meta.deletedAt); err != nil {
 			return err
 		}
-		handle(sid, meta)
+		handleRule(sid, meta)
 	}
 	return rows.Err()
 }
