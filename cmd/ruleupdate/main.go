@@ -74,6 +74,9 @@ func handleRule(saveRule saveRuleFunc, fileID, line string) {
 		log.Println("SID", sid, "is new")
 	} else if rev > meta.rev || meta.deletedAt.Valid {
 		log.Println("SID", sid, "was updated")
+	} else {
+		// rule unchanged
+		return
 	}
 	if err := saveRule(sid, rev, line, fileID, found); err != nil {
 		log.Println("[ERROR]", err, "for SID", sid)
